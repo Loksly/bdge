@@ -1,27 +1,55 @@
 ## Neo4j
 
 
-### Ejecutar en docker
-
-```
-$ docker run -p7474:7475 neo4j
-```
 
 ### EJERCICIO: Construir los nodos :Tag para cada uno de los tags que aparecen en las preguntas. Construir las relaciones ```post-[:TAGGED]->tag``` para cada tag y también ```tag-[:TAGS]->post```
 
 Para ello, buscar en la ayuda las construcciones WITH y UNWIND y las funciones replace() y split() de Cypher. La siguiente consulta debe retornar 1192 resultados:
 
 ```neo4j
-MATCH p=(t:Tag)-[:TAGS]->(:Question) WHERE t.name =~ "^java$|^c\\+\\+$" RETURN count(p);
+MATCH p=(t:Tag)-[:TAGS]->(:Question)
+	WHERE t.name =~ "^java$|^c\\+\\+$" RETURN count(p);
 ```
 
+
+#### Borrar las Tags:
+```neo4j
+MATCH (n: Tag)
+	DETACH DELETE n
+;
+```
+
+#### Definir sus restricciones:
+```neo4j
+CREATE CONSTRAINT ON (t:Tag)
+	ASSERT t.Name IS UNIQUE;
+```
+
+#### Solución:
+```neo4j
+MATCH ( c:Question )
+	UNWIND SPLIT(replace(c.Tags,">", "<"), "<") as tagC
+		WITH distinct tagC as tag, c as pregunta
+		MERGE (t:Tag {name: tag })
+		MERGE (t)-[:TAGS]->(pregunta)
+		MERGE (pregunta)-[:TAGGED]->(t)
+;
+```
+Ampliamente mejorable el _split_, pero válido.
+
+```text
+Added 874 labels, created 874 nodes, set 874 properties, created 46218 relationships, statement executed in 23598 ms.
+```
+
+
 La siguiente consulta muestra los usuarios que preguntan por cada Tag:
+
 ```neo4j
 MATCH (t:Tag)-->(:Question)<--(u:User) RETURN t.name,collect(distinct u.Id) ORDER BY t.name;
 ```
 
-
 El mismo MATCH se puede usar para encontrar qué conjunto de tags ha usado cada usuario cambiando lo que retornamos:
+
 ```neo4j
 MATCH (t:Tag)-->(:Question)<--(u:User) RETURN u.Id,collect(distinct t.name) ORDER BY toInt(u.Id);
 ```
@@ -29,52 +57,27 @@ MATCH (t:Tag)-->(:Question)<--(u:User) RETURN u.Id,collect(distinct t.name) ORDE
 
 ### EJERCICIO: Relacionar cada usuario con los tags de sus preguntas a través de la relación _:INTERESTED_IN_.
 
+```neo4j
+MATCH (u: User)-[:WROTE]->(:Question)-[:TAGGED]->(label: Tag)
+	MERGE (u)-[:INTERESTED_IN]->(label);
+```
+
+Salida:
+```text
+Created 12327 relationships, statement executed in 381 ms.
+```
+
 
 ### EJERCICIO: Recomendar a los usuarios tags sobre los que podrían estar interesados en base a tags en los que los usuarios con los que están relacionados con _:RECIPROCATE_ están interesados y ellos no, ordenado por número de usuarios interesados en cada tag.
 
-
-
-
-Código temporal por ordenar
-
+```neo4j
+MATCH (usuario1: User)-[:RECIPROCATE]->(usuario2: User)-[:INTERESTED_IN]->(etiqueta)
+	WHERE NOT (usuario1)-[:INTERESTED_IN]->(etiqueta)
+	WITH etiqueta as etiqueta, usuario1 as usuario
+	MATCH(interesados)-[:INTERESTED_IN]->(etiqueta)
+		WITH etiqueta as etiqueta, usuario as u, count(interesados) as inter
+		ORDER BY inter desc
+		RETURN u as idusuario, COLLECT(distinct etiqueta.name) AS recomendaciones
 ```
-create (t:Tag { Name:  })
+[Ejemplo de salida en CSV](./recomendaciones.csv)
 
-WITH SPLIT(line.SWords, ";") AS SWords, line 
-unwind range(0, size(Swords)-1) as i
-
-merge (t:Tag { Name: tagname })
-
-WITH split(line.TWords, ';') as splitted
-UNWIND range(0, size(splitted) -1) as i
-MERGE (t:Tag {Name: splitted[i]})
-MERGE (sentence)-[:HAS_WORD {position: i}]->(w)
-
-
-
-create constraint on (p:Post) assert p.Id IS UNIQUE;
-create constraint on (t:Tag) assert t.Name IS UNIQUE;
-
-MATCH ( c:Question )
-	WITH c, SPLIT(c.Tags, ",") as tags
-	UNWIND RANGE(0,SIZE(tags)-1) as i
-		MERGE (t:Tag {Name: replace(replace(tags[i], "<", ""), ">", "") })
-		MERGE (t) -[:TAGS]->(c)
-		MERGE (c) -[:TAGGED]->(t)
-
-
-# borrar las Tags
-MATCH (n: Tag)
-DETACH DELETE n
-;
-
-# asignarlas
-MATCH ( c:Question )
-	WITH c AS pregunta
-	UNWIND SPLIT(pregunta.Tags, "><") as tag
-		WITH distinct tag
-		MERGE (t:Tag {name: replace(replace(tag, "<", ""), ">", "") })
-		MERGE (t)-[:TAGS]->(pregunta)<-[:TAGGED]->(t)
-;
-
-```
