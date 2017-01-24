@@ -127,28 +127,42 @@ db.posts.aggregate([
 db.rq3_.drop();
 db.rq3.drop();
 db.posts.mapReduce(
-	function(){
-		emit(this.OwnerUserId, this.PostTypeId);
-	},
-	function(key, values){
-		var numRespuestas = values.filter(function(a){ return a === 2; }).length;
-		var numPreguntasYRespuestas = values.length;
-		return Math.ceil(100 * numRespuestas / numPreguntasYRespuestas);
-	},
-	{
-		query:{ PostTypeId: { $in: [1, 2] } },
-		out: "rq3_"
-	}
+    function(){
+        var obj = {
+            numPreguntas: (this.PostTypeId === 1) ? 1 : 0,
+            numRespuestas: (this.PostTypeId === 2) ? 1 : 0
+        };
+
+        emit(this.OwnerUserId, obj);
+    },
+    function(key, values){
+        var obj = {
+            numPreguntas: 0,
+            numRespuestas: 0
+        };
+        for(var i = 0, j = values.length; i < j; i++){
+            obj.numPreguntas += values[i].numPreguntas;
+            obj.numRespuestas += values[i].numRespuestas; 
+        }
+    },
+    {
+        query:{ PostTypeId: { $in: [1, 2] } },
+        out: "rq3_",
+        finalize: function(key, value){
+            var numPreguntasYRespuestas = value.numPreguntas + value.numRespuestas;
+            return Math.ceil(100 * value.numPreguntas / numPreguntasYRespuestas);
+        }
+    }
 );
 db.rq3_.mapReduce(
-	function(){
-		emit(this.value, 1);
-	},
-	function(key, values){
-		return Array.sum(values);
-	},
-	{
-		out: "rq3"
-	}
+    function(){
+        emit(this.value, 1);
+    },
+    function(key, values){
+        return Array.sum(values);
+    },
+    {
+        out: "rq3"
+    }
 );
 ```
